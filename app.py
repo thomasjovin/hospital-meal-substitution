@@ -1,5 +1,6 @@
 import streamlit as st
 import datetime
+import pandas as pd
 import time
 
 # ---------- Page Setup ----------
@@ -90,11 +91,25 @@ def login_section():
 
 # ---------- Main App ----------
 def main_app():
+
     # Ensure preferences have defaults early
+    # --- Initialize session state defaults early ---
     if "diet_preference" not in st.session_state:
         st.session_state.diet_preference = "None"
+
     if "allergies" not in st.session_state:
         st.session_state.allergies = ["Gluten"]
+
+    if "meal_time_preferences" not in st.session_state:
+        st.session_state.meal_time_preferences = {
+            "Breakfast": "08:00",
+            "Lunch": "12:00",
+            "Dinner": "18:00"
+        }
+
+    if "meal_times" not in st.session_state:
+        st.session_state.meal_times = {}
+
     allergies = st.session_state.get("allergies", [])
     # Allergies warning
     allergies = st.session_state.get("allergies", [])
@@ -260,7 +275,7 @@ def main_app():
     ]
 
     status_colors = {
-        "Pending": "gray",
+        "Scheduled": "gray",
         "Completed": "green",
         "Skipped": "red"
     }
@@ -279,9 +294,9 @@ def main_app():
 
     if date_str not in st.session_state.meal_schedule:
         st.session_state.meal_schedule[date_str] = {
-            "Breakfast": {"meal": meals["Breakfast"][0], "status": "Pending", "rating": 0},
-            "Lunch": {"meal": meals["Lunch"][0], "status": "Pending", "rating": 0},
-            "Dinner": {"meal": meals["Dinner"][0], "status": "Pending", "rating": 0}
+            "Breakfast": {"meal": meals["Breakfast"][0], "status": "Scheduled", "rating": 0},
+            "Lunch": {"meal": meals["Lunch"][0], "status": "Scheduled", "rating": 0},
+            "Dinner": {"meal": meals["Dinner"][0], "status": "Scheduled", "rating": 0}
         }
 
     if "selected_meal_for_nutrition" not in st.session_state:
@@ -307,7 +322,7 @@ def main_app():
             st.markdown(f"**Status:** :{status_colors[meal_data['status']]}[●] {meal_data['status']}")
             st.markdown(f"**Rating:** ⭐ {meal_data['rating']} / 5")
 
-            col1, col2, col3 = st.columns([2, 2, 2])
+            col1, col2, col3 = st.columns([5, 3, 3])
             with col1:
                 if st.button(f"✏️ Edit {meal_type}", key=f"edit_{meal_type}_{date_str}"):
                     st.session_state[f"{meal_type}_edit_mode_{date_str}"] = True
@@ -369,13 +384,50 @@ def main_app():
                 st.session_state[skip_key] = False
 
             with col3:
+                # Existing Skip button
+                skip_key = f"skip_{meal_type}_{date_str}"
+                if skip_key not in st.session_state:
+                    st.session_state[skip_key] = False
+
                 if st.button("🚫 Skip Meal", key=skip_key + "_btn"):
                     st.session_state[skip_key] = True
 
-            if st.session_state[skip_key]:
-                st.session_state.meal_schedule[date_str][meal_type]["status"] = "Skipped"
-                st.session_state[skip_key] = False
-                st.rerun()
+                if st.session_state[skip_key]:
+                    st.session_state.meal_schedule[date_str][meal_type]["status"] = "Skipped"
+                    st.session_state[skip_key] = False
+                    st.rerun()
+
+            # Add meal time scheduler (new column or below existing cols)
+            if "meal_times" not in st.session_state:
+                st.session_state.meal_times = {}
+
+            if date_str not in st.session_state.meal_times:
+                st.session_state.meal_times[date_str] = {}
+
+            # Use saved time if exists, else fall back to preference
+            meal_pref_default = st.session_state.meal_time_preferences.get(meal_type, datetime.time(8, 0))
+            raw_time = st.session_state.meal_times[date_str].get(meal_type, meal_pref_default)
+
+            # Convert string to time object if needed
+            if isinstance(raw_time, str):
+                raw_time = datetime.datetime.strptime(raw_time, "%H:%M").time()
+
+            # Set a consistent widget key
+            widget_key = f"schedule_time_{meal_type}_{date_str}"
+
+            # Initialize state key if needed
+            if widget_key not in st.session_state:
+                st.session_state[widget_key] = raw_time
+
+            # Show the time input
+            selected_time = st.time_input(
+                f"⏰ Schedule {meal_type}",
+                value=st.session_state[widget_key],
+                key=widget_key
+            )
+
+            # Sync into your schedule dictionary
+            st.session_state.meal_times[date_str][meal_type] = selected_time
 
             meal_data["rating"] = st.slider(
                 f"Rate {meal_type}", 0, 5, meal_data["rating"],
@@ -458,6 +510,23 @@ def main_app():
             default=st.session_state.allergies,
             key="allergies"
         )
+
+        st.subheader("🕒 Preferred Meal Times")
+
+        # Defaults if not already set
+        if "meal_time_preferences" not in st.session_state:
+            st.session_state.meal_time_preferences = {
+                "Breakfast": "08:00",
+                "Lunch": "12:00",
+                "Dinner": "18:00"
+            }
+
+        for meal_type in ["Breakfast", "Lunch", "Dinner"]:
+            st.time_input(
+                f"{meal_type} Time",
+                value=st.session_state.meal_time_preferences[meal_type],
+                key=f"pref_time_{meal_type}"
+            )
 
         st.success("Your preferences are saved for this session.")
         st.markdown(f"**Diet:** {st.session_state.diet_preference}")
