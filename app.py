@@ -276,6 +276,7 @@ def main_app():
 
     status_colors = {
         "Scheduled": "gray",
+        "Past": "gray",
         "Completed": "green",
         "Skipped": "red"
     }
@@ -315,6 +316,25 @@ def main_app():
 
         for meal_type in ["Breakfast", "Lunch", "Dinner"]:
             meal_data = st.session_state.meal_schedule[date_str][meal_type]
+
+            # Get the scheduled time from state or preference
+            meal_pref_default = st.session_state.meal_time_preferences.get(meal_type, "08:00")
+            meal_time = st.session_state.meal_times.get(date_str, {}).get(meal_type, meal_pref_default)
+
+            # Ensure it's a time object
+            if isinstance(meal_time, str):
+                meal_time = datetime.datetime.strptime(meal_time, "%H:%M").time()
+
+            # Compute whether the meal time is in the past
+            scheduled_dt = datetime.datetime.strptime(date_str, "%Y-%m-%d").replace(
+                hour=meal_time.hour, minute=meal_time.minute
+            )
+            is_past = scheduled_dt < datetime.datetime.now()
+
+            # Mark as Past if needed
+            if is_past and meal_data["status"] == "Scheduled":
+                meal_data["status"] = "Past"
+
             selected_meal = meal_data["meal"]
 
             st.markdown(f"### 🍽️ {meal_type}")
@@ -322,112 +342,118 @@ def main_app():
             st.markdown(f"**Status:** :{status_colors[meal_data['status']]}[●] {meal_data['status']}")
             st.markdown(f"**Rating:** ⭐ {meal_data['rating']} / 5")
 
-            col1, col2, col3 = st.columns([5, 3, 3])
-            with col1:
-                if st.button(f"✏️ Edit {meal_type}", key=f"edit_{meal_type}_{date_str}"):
-                    st.session_state[f"{meal_type}_edit_mode_{date_str}"] = True
+            if not is_past:
+                col1, col2, col3 = st.columns([5, 3, 3])
+                with col1:
+                    if st.button(f"✏️Edit {meal_type}", key=f"edit_{meal_type}_{date_str}"):
+                        st.session_state[f"{meal_type}_edit_mode_{date_str}"] = True
 
-                if st.session_state.get(f"{meal_type}_edit_mode_{date_str}", False):
-                    raw_options = meals[meal_type]
-                    display_options = []
+                    if st.session_state.get(f"{meal_type}_edit_mode_{date_str}", False):
+                        raw_options = meals[meal_type]
+                        display_options = []
 
-                    for meal in raw_options:
-                        allergens = meal_allergens.get(meal, [])
-                        matching_allergens = [a for a in allergens if a in st.session_state.allergies]
-                        if matching_allergens:
-                            label = f"⚠️ {meal} ({', '.join(matching_allergens)})"
-                        else:
-                            label = meal
-                        display_options.append(label)
+                        for meal in raw_options:
+                            allergens = meal_allergens.get(meal, [])
+                            matching_allergens = [a for a in allergens if a in st.session_state.allergies]
+                            if matching_allergens:
+                                label = f"⚠️ {meal} ({', '.join(matching_allergens)})"
+                            else:
+                                label = meal
+                            display_options.append(label)
 
-                    # Determine currently selected meal label
-                    current_allergens = meal_allergens.get(selected_meal, [])
-                    current_matching = [a for a in current_allergens if a in st.session_state.allergies]
-                    current_display = f"⚠️ {selected_meal} ({', '.join(current_matching)})" if current_matching else selected_meal
-                    selected_idx = display_options.index(current_display) if current_display in display_options else 0
+                        # Determine currently selected meal label
+                        current_allergens = meal_allergens.get(selected_meal, [])
+                        current_matching = [a for a in current_allergens if a in st.session_state.allergies]
+                        current_display = f"⚠️ {selected_meal} ({', '.join(current_matching)})" if current_matching else selected_meal
+                        selected_idx = display_options.index(current_display) if current_display in display_options else 0
 
-                    # Selection + Confirm Button
-                    selected_label = st.selectbox(
-                        "",
-                        options=display_options,
-                        index=selected_idx,
-                        key=f"{meal_type}_selectbox_{date_str}",
-                        label_visibility="collapsed"
-                    )
+                        # Selection + Confirm Button
+                        selected_label = st.selectbox(
+                            "",
+                            options=display_options,
+                            index=selected_idx,
+                            key=f"{meal_type}_selectbox_{date_str}",
+                            label_visibility="collapsed"
+                        )
 
-                    cleaned_meal = selected_label.replace("⚠️ ", "").split(" (")[0]
-                    selected_allergens = meal_allergens.get(cleaned_meal, [])
+                        cleaned_meal = selected_label.replace("⚠️ ", "").split(" (")[0]
+                        selected_allergens = meal_allergens.get(cleaned_meal, [])
 
-                    if st.button(f"Confirm {meal_type} Change", key=f"confirm_{meal_type}_{date_str}"):
-                        if any(a in st.session_state.allergies for a in selected_allergens):
-                            st.error("This meal contains ingredients you're allergic to and cannot be selected.")
-                        else:
-                            st.session_state.meal_schedule[date_str][meal_type]["meal"] = cleaned_meal
-                            st.session_state[f"{meal_type}_edit_mode_{date_str}"] = False
-                            st.rerun()  # force update to apply change
+                        if st.button(f"Confirm {meal_type} Change", key=f"confirm_{meal_type}_{date_str}"):
+                            if any(a in st.session_state.allergies for a in selected_allergens):
+                                st.error("This meal contains ingredients you're allergic to and cannot be selected.")
+                            else:
+                                st.session_state.meal_schedule[date_str][meal_type]["meal"] = cleaned_meal
+                                st.session_state[f"{meal_type}_edit_mode_{date_str}"] = False
+                                st.rerun()  # force update to apply change
 
-            done_key = f"done_{meal_type}_{date_str}"
-            if done_key not in st.session_state:
-                st.session_state[done_key] = False
+                done_key = f"done_{meal_type}_{date_str}"
+                if done_key not in st.session_state:
+                    st.session_state[done_key] = False
 
-            with col2:
-                if st.button("✅ Received Meal", key=done_key + "_btn"):
-                    st.session_state[done_key] = True
+                with col2:
+                    if st.button("✅ Received Meal", key=done_key + "_btn"):
+                        st.session_state[done_key] = True
 
-            if st.session_state[done_key]:
-                st.session_state.meal_schedule[date_str][meal_type]["status"] = "Completed"
-                st.session_state[done_key] = False
-                st.rerun()
+                if st.session_state[done_key]:
+                    st.session_state.meal_schedule[date_str][meal_type]["status"] = "Completed"
+                    st.session_state[done_key] = False
+                    st.rerun()
 
-            skip_key = f"skip_{meal_type}_{date_str}"
-            if skip_key not in st.session_state:
-                st.session_state[skip_key] = False
-
-            with col3:
-                # Existing Skip button
                 skip_key = f"skip_{meal_type}_{date_str}"
                 if skip_key not in st.session_state:
                     st.session_state[skip_key] = False
 
-                if st.button("🚫 Skip Meal", key=skip_key + "_btn"):
-                    st.session_state[skip_key] = True
+                with col3:
+                    # Existing Skip button
+                    skip_key = f"skip_{meal_type}_{date_str}"
+                    if skip_key not in st.session_state:
+                        st.session_state[skip_key] = False
 
-                if st.session_state[skip_key]:
-                    st.session_state.meal_schedule[date_str][meal_type]["status"] = "Skipped"
-                    st.session_state[skip_key] = False
-                    st.rerun()
+                    if st.button("🚫 Skip Meal", key=skip_key + "_btn"):
+                        st.session_state[skip_key] = True
 
-            # Add meal time scheduler (new column or below existing cols)
-            if "meal_times" not in st.session_state:
-                st.session_state.meal_times = {}
+                    if st.session_state[skip_key]:
+                        st.session_state.meal_schedule[date_str][meal_type]["status"] = "Skipped"
+                        st.session_state[skip_key] = False
+                        st.rerun()
 
-            if date_str not in st.session_state.meal_times:
-                st.session_state.meal_times[date_str] = {}
+                # Add meal time scheduler (new column or below existing cols)
+                if "meal_times" not in st.session_state:
+                    st.session_state.meal_times = {}
 
-            # Use saved time if exists, else fall back to preference
-            meal_pref_default = st.session_state.meal_time_preferences.get(meal_type, datetime.time(8, 0))
-            raw_time = st.session_state.meal_times[date_str].get(meal_type, meal_pref_default)
+                if date_str not in st.session_state.meal_times:
+                    st.session_state.meal_times[date_str] = {}
 
-            # Convert string to time object if needed
-            if isinstance(raw_time, str):
-                raw_time = datetime.datetime.strptime(raw_time, "%H:%M").time()
+                # Use saved time if exists, else fall back to preference
+                meal_pref_default = st.session_state.meal_time_preferences.get(meal_type, datetime.time(8, 0))
+                raw_time = st.session_state.meal_times[date_str].get(meal_type, meal_pref_default)
 
-            # Set a consistent widget key
-            widget_key = f"schedule_time_{meal_type}_{date_str}"
+                # Convert string to time object if needed
+                if isinstance(raw_time, str):
+                    raw_time = datetime.datetime.strptime(raw_time, "%H:%M").time()
 
-            # Initialize state key if needed
-            if widget_key not in st.session_state:
-                st.session_state[widget_key] = raw_time
+                # Set a consistent widget key
+                widget_key = f"schedule_time_{meal_type}_{date_str}"
 
-            # Show the time input
-            selected_time = st.time_input(
-                f"⏰ Schedule {meal_type}",
-                value=st.session_state[widget_key],
-                key=widget_key
-            )
+                # Initialize state key if needed
+                if widget_key not in st.session_state:
+                    st.session_state[widget_key] = raw_time
 
-            # Sync into your schedule dictionary
-            st.session_state.meal_times[date_str][meal_type] = selected_time
+                # Show the time input
+                selected_time = st.time_input(
+                    f"⏰ Schedule {meal_type}",
+                    value=st.session_state[widget_key],
+                    key=widget_key
+                )
+
+                # Sync into your schedule dictionary
+                st.session_state.meal_times[date_str][meal_type] = selected_time
+
+            else:
+                st.info(
+                    f"⏳ This meal is in the past (scheduled for {scheduled_dt.strftime('%I:%M %p')}). No further changes allowed.")
+
 
             meal_data["rating"] = st.slider(
                 f"Rate {meal_type}", 0, 5, meal_data["rating"],
