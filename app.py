@@ -633,6 +633,138 @@ def main_app():
                 else:
                     st.error("Please enter a valid patient name.")
 
+# ---------- Hospital Staff Dashboard ----------
+def staff_dashboard():
+    st.subheader("🧑‍⚕️ Hospital Staff Dashboard")
+
+    # Initialize session state for staff patients
+    if "staff_patients" not in st.session_state:
+        st.session_state.staff_patients = {
+            "Mr. Perry": {
+                "room": "A101",
+                "diet_preference": "None",
+                "allergies": ["Gluten"],
+                "restrictions": ["No pork"],
+                "caregiver": "Mr. Perry (Family)",
+                "time_blocks": [{"start": "12:00", "end": "14:00", "reason": "Fasting required"}]
+        },
+            "Ms. Candace": {
+                "room": "B205",
+                "diet_preference": "Vegetarian",
+                "allergies": [],
+                "restrictions": ["Fasting until noon"],
+                "caregiver": "Ms. Candace (Friend)",
+                "time_blocks": [{"start": "14:00", "end": "18:00", "reason": "Operation"}]
+            }
+        }
+
+    tab1, tab2, tab3 = st.tabs(["📋 Patient Overview", "➕ Admit Patient", "🛠️ Manage Restrictions"])
+
+    # --------------------------
+    # Tab 1: Patient Overview
+    # --------------------------
+    with tab1:
+        st.markdown("### 👥 All Patients")
+        search = st.text_input("Search by patient name")
+
+        for name, info in st.session_state.staff_patients.items():
+            if search and search.lower() not in name.lower():
+                continue
+
+            with st.expander(f"🧍 {name} - Room {info['room']}"):
+                st.markdown(f"**Dietary Preference:** {info['diet_preference']}")
+                st.markdown(f"**Allergies:** {', '.join(info['allergies']) if info['allergies'] else 'None'}")
+                st.markdown(f"**Restrictions:** {', '.join(info['restrictions']) if info['restrictions'] else 'None'}")
+                st.markdown(f"**Assigned Caregiver:** {info['caregiver'] if info['caregiver'] else 'None'}")
+
+                if st.button(f"View Schedule for {name}"):
+                    st.markdown(f"### 🗓️ Schedule for {name} — Room {info['room']}")
+
+                    time_blocks = info.get("time_blocks", [])
+                    if not time_blocks:
+                        st.info("No restricted time windows have been added.")
+                    else:
+                        for block in time_blocks:
+                            st.markdown(
+                                f"- **{block['start']} – {block['end']}** &nbsp;&nbsp; | &nbsp;&nbsp; _{block['reason']}_"
+                            )
+
+    # --------------------------
+    # Tab 2: Admit New Patient
+    # --------------------------
+    with tab2:
+        st.markdown("### 🏥 Admit a New Patient")
+        new_name = st.text_input("Patient Full Name")
+        new_room = st.text_input("Room Number")
+        new_diet = st.selectbox("Dietary Preference", ["None", "Vegetarian", "Vegan", "Keto", "Low Sodium", "Diabetic", "Halal", "Kosher"])
+        new_allergies = st.multiselect("Allergies", ["Gluten", "Dairy", "Nuts", "Shellfish", "Soy", "Eggs"])
+        new_restrictions = st.text_area("Medical/Dietary Restrictions (comma separated)")
+        new_caregiver = st.text_input("Assigned Caregiver (if any)")
+
+        if st.button("Admit Patient"):
+            if not new_name or not new_room:
+                st.error("Patient name and room number are required.")
+            else:
+                st.session_state.staff_patients[new_name] = {
+                    "room": new_room,
+                    "diet_preference": new_diet,
+                    "allergies": new_allergies,
+                    "restrictions": [r.strip() for r in new_restrictions.split(",") if r.strip()],
+                    "caregiver": new_caregiver
+                }
+                st.success(f"✅ {new_name} has been admitted to Room {new_room}.")
+
+    # --------------------------
+    # Tab 3: Manage Restrictions
+    # --------------------------
+    with tab3:
+        st.markdown("### 🧾 Manage Patient Restrictions")
+        patient_list = list(st.session_state.staff_patients.keys())
+        selected_patient = st.selectbox("Select a patient", [""] + patient_list)
+
+        if selected_patient:
+            patient_info = st.session_state.staff_patients[selected_patient]
+
+            updated_diet = st.selectbox("Update Dietary Preference", ["None", "Vegetarian", "Vegan", "Keto", "Low Sodium", "Diabetic", "Halal", "Kosher"], index=["None", "Vegetarian", "Vegan", "Keto", "Low Sodium", "Diabetic", "Halal", "Kosher"].index(patient_info["diet_preference"]))
+            updated_allergies = st.multiselect("Update Allergies", ["Gluten", "Dairy", "Nuts", "Shellfish", "Soy", "Eggs"], default=patient_info["allergies"])
+            updated_restrictions = st.text_area("Update Restrictions (comma separated)", value=", ".join(patient_info["restrictions"]))
+
+            if st.button("Save Changes"):
+                patient_info["diet_preference"] = updated_diet
+                patient_info["allergies"] = updated_allergies
+                patient_info["restrictions"] = [r.strip() for r in updated_restrictions.split(",") if r.strip()]
+                st.success(f"✅ Restrictions updated for {selected_patient}.")
+
+            st.markdown("---")
+            st.markdown("### ⏰ Time-Based Restrictions")
+
+            patient_info.setdefault("time_blocks", [])
+
+            # Show existing time blocks
+            if patient_info["time_blocks"]:
+                for i, block in enumerate(patient_info["time_blocks"]):
+                    st.markdown(f"- `{block['start']} – {block['end']}` | **{block['reason']}**")
+            else:
+                st.info("No time-based restrictions.")
+
+            # Add a new one
+            st.markdown("#### ➕ Add New Time Block")
+            start_time = st.time_input("Start Time", key="time_block_start")
+            end_time = st.time_input("End Time", key="time_block_end")
+            reason = st.selectbox("Reason", ["Fasting required", "In operation", "Scheduled procedure", "Other"])
+
+            if st.button("Add Time Restriction"):
+                if start_time >= end_time:
+                    st.error("End time must be after start time.")
+                else:
+                    patient_info["time_blocks"].append({
+                        "start": start_time.strftime("%H:%M"),
+                        "end": end_time.strftime("%H:%M"),
+                        "reason": reason
+                    })
+                    st.success("✅ Time restriction added.")
+                    st.rerun()
+
 
 # ---------- Run App ----------
 login_section()
@@ -716,51 +848,4 @@ else:
 
 
     elif role == "staff":
-        st.subheader("👩‍👦 Hospital Staff Dashboard")
-
-        if "patients" not in st.session_state:
-            st.session_state.patients = {
-                "John Doe": {
-                    "allergies": ["Gluten"],
-                    "diet": "Keto",
-                    "meals": {}
-                },
-                "Jane Smith": {
-                    "allergies": [],
-                    "diet": "Vegetarian",
-                    "meals": {}
-                }
-            }
-
-        # Patient selection
-        patient_names = list(st.session_state.patients.keys())
-        selected_patient = st.selectbox("Select a patient", patient_names)
-
-        if selected_patient:
-            patient_data = st.session_state.patients[selected_patient]
-
-            st.markdown(f"### {selected_patient}")
-            st.write(f"**Dietary Preference:** {patient_data['diet']}")
-            st.write(f"**Allergies:** {', '.join(patient_data['allergies']) if patient_data['allergies'] else 'None'}")
-
-            if st.button("Edit Patient Info"):
-                st.session_state["edit_patient"] = selected_patient
-
-        with st.expander("➕ Add New Patient"):
-            new_name = st.text_input("Full Name")
-            new_diet = st.selectbox("Dietary Preference",
-                                    ["None", "Vegetarian", "Vegan", "Keto", "Low Sodium", "Diabetic", "Halal",
-                                     "Kosher"])
-            new_allergies = st.multiselect("Known Allergies", ["Gluten", "Dairy", "Nuts", "Shellfish", "Soy", "Eggs"])
-            if st.button("Add Patient"):
-                if new_name.strip():
-                    st.session_state.patients[new_name.strip()] = {
-                        "diet": new_diet,
-                        "allergies": new_allergies,
-                        "meals": {}
-                    }
-                    st.success(f"Patient '{new_name}' added.")
-                    st.rerun()
-                else:
-                    st.error("Name cannot be empty.")
-
+        staff_dashboard()
