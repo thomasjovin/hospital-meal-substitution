@@ -15,6 +15,31 @@ if "qr_shown" not in st.session_state:
     st.session_state.qr_verified = False
 if "meal_schedule" not in st.session_state:
     st.session_state.meal_schedule = {}
+if "caregiver_patients" not in st.session_state:
+    st.session_state.caregiver_patients = {
+        "Mr. Perry (Family)": {
+            "meal_schedule": {},
+            "meal_times": {},
+            "meal_time_preferences": {
+                "Breakfast": "08:00",
+                "Lunch": "12:00",
+                "Dinner": "18:00"
+            },
+            "diet_preference": "None",
+            "allergies": ["Gluten"]
+        },
+        "Ms. Candace (Friend)": {
+            "meal_schedule": {},
+            "meal_times": {},
+            "meal_time_preferences": {
+                "Breakfast": "08:00",
+                "Lunch": "12:00",
+                "Dinner": "18:00"
+            },
+            "diet_preference": "Vegetarian",
+            "allergies": []
+        }
+    }
 
 # ---------- Login Section ----------
 def login_section():
@@ -88,6 +113,140 @@ def login_section():
             st.session_state.role = "caregiver"
             st.sidebar.success("✅ Login successful")
 
+def render_meal_selection_for_type(meal_type, selected_date, meals, meal_nutrition, meal_allergens, status_colors):
+    date_str = selected_date.isoformat()
+    meal_data = st.session_state.meal_schedule[date_str][meal_type]
+    selected_meal = meal_data["meal"]
+
+    # Time + status check
+    meal_pref_default = st.session_state.meal_time_preferences.get(meal_type, "08:00")
+    meal_time = st.session_state.meal_times.get(date_str, {}).get(meal_type, meal_pref_default)
+    if isinstance(meal_time, str):
+        meal_time = datetime.datetime.strptime(meal_time, "%H:%M").time()
+    scheduled_dt = datetime.datetime.strptime(date_str, "%Y-%m-%d").replace(
+        hour=meal_time.hour, minute=meal_time.minute
+    )
+    is_past = scheduled_dt < datetime.datetime.now()
+    if is_past and meal_data["status"] == "Scheduled":
+        meal_data["status"] = "Past"
+
+    st.markdown(f"### 🍽️ {meal_type}")
+    st.markdown(f"**Current Meal:** {selected_meal}")
+    st.markdown(f"**Status:** :{status_colors[meal_data['status']]}[\u25cf] {meal_data['status']}")
+    st.markdown(f"**Rating:** ⭐ {meal_data['rating']} / 5")
+
+    if not is_past and st.session_state.get("can_edit_meals", True):
+        col1, col2, col3 = st.columns([5, 3, 3])
+        with col1:
+            if st.session_state.get("can_edit_meals", True):
+                if st.button(f"✏️Edit {meal_type}", key=f"edit_{meal_type}_{date_str}"):
+                    st.session_state[f"{meal_type}_edit_mode_{date_str}"] = True
+
+                if st.session_state.get(f"{meal_type}_edit_mode_{date_str}", False):
+                    raw_options = meals[meal_type]
+                    display_options = []
+
+                    for meal in raw_options:
+                        allergens = meal_allergens.get(meal, [])
+                        matching_allergens = [a for a in allergens if a in st.session_state.allergies]
+                        label = f"⚠️ {meal} ({', '.join(matching_allergens)})" if matching_allergens else meal
+                        display_options.append(label)
+
+                    current_allergens = meal_allergens.get(selected_meal, [])
+                    current_matching = [a for a in current_allergens if a in st.session_state.allergies]
+                    current_display = f"⚠️ {selected_meal} ({', '.join(current_matching)})" if current_matching else selected_meal
+                    selected_idx = display_options.index(current_display) if current_display in display_options else 0
+
+                    selected_label = st.selectbox(
+                        "",
+                        options=display_options,
+                        index=selected_idx,
+                        key=f"{meal_type}_selectbox_{date_str}",
+                        label_visibility="collapsed"
+                    )
+
+                    cleaned_meal = selected_label.replace("⚠️ ", "").split(" (")[0]
+                    selected_allergens = meal_allergens.get(cleaned_meal, [])
+
+                    if st.button(f"Confirm {meal_type} Change", key=f"confirm_{meal_type}_{date_str}"):
+                        if any(a in st.session_state.allergies for a in selected_allergens):
+                            st.error("This meal contains ingredients you're allergic to and cannot be selected.")
+                        else:
+                            st.session_state.meal_schedule[date_str][meal_type]["meal"] = cleaned_meal
+                            st.session_state[f"{meal_type}_edit_mode_{date_str}"] = False
+                            st.rerun()
+
+        done_key = f"done_{meal_type}_{date_str}"
+        if done_key not in st.session_state:
+            st.session_state[done_key] = False
+        with col2:
+            if st.session_state.get("can_edit_meals", True):
+                if st.button("✅ Received Meal", key=done_key + "_btn"):
+                    st.session_state[done_key] = True
+        if st.session_state[done_key]:
+            st.session_state.meal_schedule[date_str][meal_type]["status"] = "Completed"
+            st.session_state[done_key] = False
+            st.rerun()
+
+        skip_key = f"skip_{meal_type}_{date_str}"
+        if skip_key not in st.session_state:
+            st.session_state[skip_key] = False
+        with col3:
+            if st.session_state.get("can_edit_meals", True):
+                if st.button("🚫 Skip Meal", key=skip_key + "_btn"):
+                    st.session_state[skip_key] = True
+        if st.session_state[skip_key]:
+            st.session_state.meal_schedule[date_str][meal_type]["status"] = "Skipped"
+            st.session_state[skip_key] = False
+            st.rerun()
+
+        # Time input
+        if "meal_times" not in st.session_state:
+            st.session_state.meal_times = {}
+        if date_str not in st.session_state.meal_times:
+            st.session_state.meal_times[date_str] = {}
+
+        meal_pref_default = st.session_state.meal_time_preferences.get(meal_type, datetime.time(8, 0))
+        raw_time = st.session_state.meal_times[date_str].get(meal_type, meal_pref_default)
+        if isinstance(raw_time, str):
+            raw_time = datetime.datetime.strptime(raw_time, "%H:%M").time()
+
+        widget_key = f"schedule_time_{meal_type}_{date_str}"
+        if widget_key not in st.session_state:
+            st.session_state[widget_key] = raw_time
+
+        selected_time = st.time_input(
+            f"⏰ Schedule {meal_type}",
+            value=st.session_state[widget_key],
+            key=widget_key
+        )
+        st.session_state.meal_times[date_str][meal_type] = selected_time
+
+    elif is_past:
+        if st.session_state.get("can_edit_meals", True):
+            st.info(
+                f"⏳ This meal is in the past (scheduled for {scheduled_dt.strftime('%I:%M %p')}). No further changes allowed.")
+
+    if st.session_state.get("can_edit_meals", True):
+        meal_data["rating"] = st.slider(
+            f"Rate {meal_type}", 0, 5, meal_data["rating"],
+            key=f"{meal_type}_rating_{date_str}"
+        )
+
+    with st.expander("🔍 View Nutrition Info"):
+        if selected_meal in meal_nutrition:
+            image_url = meal_nutrition[selected_meal].get("Image")
+            if image_url:
+                st.image(image_url, width=300, caption=selected_meal)
+            st.write("### Nutrition Facts")
+            for key, value in meal_nutrition[selected_meal].items():
+                if key != "Image":
+                    st.write(f"- **{key}**: {value}")
+        else:
+            st.info("Nutrition info for this meal is not available.")
+
+    st.markdown("---")
+
 
 # ---------- Main App ----------
 def main_app():
@@ -113,17 +272,19 @@ def main_app():
     allergies = st.session_state.get("allergies", [])
     # Allergies warning
     allergies = st.session_state.get("allergies", [])
-    if allergies:
-        st.warning(f"⚠️ Chart indicates this patient has allergies: **{', '.join(allergies)}**")
-    else:
-        st.success("✅ No known allergies.")
+    if st.session_state.get("role") != "caregiver":
+        if allergies:
+            st.warning(f"⚠️ Chart indicates this patient has allergies: **{', '.join(allergies)}**")
+        else:
+            st.success("✅ No known allergies.")
 
     # Dietary preference warning
     diet = st.session_state.get("diet_preference", "None")
-    if diet and diet != "None":
-        st.info(f"🍽️ Dietary preference: **{diet}**")
-    else:
-        st.success("✅ No dietary restrictions selected.")
+    if st.session_state.get("role") != "caregiver":
+        if diet and diet != "None":
+            st.info(f"🍽️ Dietary preference: **{diet}**")
+        else:
+            st.success("✅ No dietary restrictions selected.")
 
     # ----------------------------
     # Shared Data + Setup
@@ -306,7 +467,10 @@ def main_app():
     # ----------------------------
     # TABS
     # ----------------------------
-    tab1, tab2, tab3 = st.tabs(["🍽️ Meal Selection", "📊 Nutrition Info", "⚙️ User Preferences"])
+    if st.session_state.get("role") == "caregiver":
+        tab1, tab2, tab3 = st.tabs(["🍽️ Meal Selection", "📊 Nutrition Info", "🔑 Manage Permissions"])
+    else:
+        tab1, tab2, tab3 = st.tabs(["🍽️ Meal Selection", "📊 Nutrition Info", "⚙️ User Preferences"])
 
     # ----------------------------
     # MEAL SELECTION
@@ -315,168 +479,8 @@ def main_app():
         st.subheader(f"Meals for {selected_date.strftime('%A, %B %d, %Y')}")
 
         for meal_type in ["Breakfast", "Lunch", "Dinner"]:
-            meal_data = st.session_state.meal_schedule[date_str][meal_type]
-
-            # Get the scheduled time from state or preference
-            meal_pref_default = st.session_state.meal_time_preferences.get(meal_type, "08:00")
-            meal_time = st.session_state.meal_times.get(date_str, {}).get(meal_type, meal_pref_default)
-
-            # Ensure it's a time object
-            if isinstance(meal_time, str):
-                meal_time = datetime.datetime.strptime(meal_time, "%H:%M").time()
-
-            # Compute whether the meal time is in the past
-            scheduled_dt = datetime.datetime.strptime(date_str, "%Y-%m-%d").replace(
-                hour=meal_time.hour, minute=meal_time.minute
-            )
-            is_past = scheduled_dt < datetime.datetime.now()
-
-            # Mark as Past if needed
-            if is_past and meal_data["status"] == "Scheduled":
-                meal_data["status"] = "Past"
-
-            selected_meal = meal_data["meal"]
-
-            st.markdown(f"### 🍽️ {meal_type}")
-            st.markdown(f"**Current Meal:** {selected_meal}")
-            st.markdown(f"**Status:** :{status_colors[meal_data['status']]}[●] {meal_data['status']}")
-            st.markdown(f"**Rating:** ⭐ {meal_data['rating']} / 5")
-
-            if not is_past:
-                col1, col2, col3 = st.columns([5, 3, 3])
-                with col1:
-                    if st.button(f"✏️Edit {meal_type}", key=f"edit_{meal_type}_{date_str}"):
-                        st.session_state[f"{meal_type}_edit_mode_{date_str}"] = True
-
-                    if st.session_state.get(f"{meal_type}_edit_mode_{date_str}", False):
-                        raw_options = meals[meal_type]
-                        display_options = []
-
-                        for meal in raw_options:
-                            allergens = meal_allergens.get(meal, [])
-                            matching_allergens = [a for a in allergens if a in st.session_state.allergies]
-                            if matching_allergens:
-                                label = f"⚠️ {meal} ({', '.join(matching_allergens)})"
-                            else:
-                                label = meal
-                            display_options.append(label)
-
-                        # Determine currently selected meal label
-                        current_allergens = meal_allergens.get(selected_meal, [])
-                        current_matching = [a for a in current_allergens if a in st.session_state.allergies]
-                        current_display = f"⚠️ {selected_meal} ({', '.join(current_matching)})" if current_matching else selected_meal
-                        selected_idx = display_options.index(current_display) if current_display in display_options else 0
-
-                        # Selection + Confirm Button
-                        selected_label = st.selectbox(
-                            "",
-                            options=display_options,
-                            index=selected_idx,
-                            key=f"{meal_type}_selectbox_{date_str}",
-                            label_visibility="collapsed"
-                        )
-
-                        cleaned_meal = selected_label.replace("⚠️ ", "").split(" (")[0]
-                        selected_allergens = meal_allergens.get(cleaned_meal, [])
-
-                        if st.button(f"Confirm {meal_type} Change", key=f"confirm_{meal_type}_{date_str}"):
-                            if any(a in st.session_state.allergies for a in selected_allergens):
-                                st.error("This meal contains ingredients you're allergic to and cannot be selected.")
-                            else:
-                                st.session_state.meal_schedule[date_str][meal_type]["meal"] = cleaned_meal
-                                st.session_state[f"{meal_type}_edit_mode_{date_str}"] = False
-                                st.rerun()  # force update to apply change
-
-                done_key = f"done_{meal_type}_{date_str}"
-                if done_key not in st.session_state:
-                    st.session_state[done_key] = False
-
-                with col2:
-                    if st.button("✅ Received Meal", key=done_key + "_btn"):
-                        st.session_state[done_key] = True
-
-                if st.session_state[done_key]:
-                    st.session_state.meal_schedule[date_str][meal_type]["status"] = "Completed"
-                    st.session_state[done_key] = False
-                    st.rerun()
-
-                skip_key = f"skip_{meal_type}_{date_str}"
-                if skip_key not in st.session_state:
-                    st.session_state[skip_key] = False
-
-                with col3:
-                    # Existing Skip button
-                    skip_key = f"skip_{meal_type}_{date_str}"
-                    if skip_key not in st.session_state:
-                        st.session_state[skip_key] = False
-
-                    if st.button("🚫 Skip Meal", key=skip_key + "_btn"):
-                        st.session_state[skip_key] = True
-
-                    if st.session_state[skip_key]:
-                        st.session_state.meal_schedule[date_str][meal_type]["status"] = "Skipped"
-                        st.session_state[skip_key] = False
-                        st.rerun()
-
-                # Add meal time scheduler (new column or below existing cols)
-                if "meal_times" not in st.session_state:
-                    st.session_state.meal_times = {}
-
-                if date_str not in st.session_state.meal_times:
-                    st.session_state.meal_times[date_str] = {}
-
-                # Use saved time if exists, else fall back to preference
-                meal_pref_default = st.session_state.meal_time_preferences.get(meal_type, datetime.time(8, 0))
-                raw_time = st.session_state.meal_times[date_str].get(meal_type, meal_pref_default)
-
-                # Convert string to time object if needed
-                if isinstance(raw_time, str):
-                    raw_time = datetime.datetime.strptime(raw_time, "%H:%M").time()
-
-                # Set a consistent widget key
-                widget_key = f"schedule_time_{meal_type}_{date_str}"
-
-                # Initialize state key if needed
-                if widget_key not in st.session_state:
-                    st.session_state[widget_key] = raw_time
-
-                # Show the time input
-                selected_time = st.time_input(
-                    f"⏰ Schedule {meal_type}",
-                    value=st.session_state[widget_key],
-                    key=widget_key
-                )
-
-                # Sync into your schedule dictionary
-                st.session_state.meal_times[date_str][meal_type] = selected_time
-
-            else:
-                st.info(
-                    f"⏳ This meal is in the past (scheduled for {scheduled_dt.strftime('%I:%M %p')}). No further changes allowed.")
-
-
-            meal_data["rating"] = st.slider(
-                f"Rate {meal_type}", 0, 5, meal_data["rating"],
-                key=f"{meal_type}_rating_{date_str}"
-            )
-
-            # Nutrition Info Dropdown
-            with st.expander("🔍 View Nutrition Info"):
-                if selected_meal in meal_nutrition:
-                    image_url = meal_nutrition[selected_meal].get("Image")
-                    if image_url:
-                        st.image(image_url, width=300, caption=selected_meal)
-                    else:
-                        st.write("_No image available for this meal._")
-
-                    st.write("### Nutrition Facts")
-                    for key, value in meal_nutrition[selected_meal].items():
-                        if key != "Image":
-                            st.write(f"- **{key}**: {value}")
-                else:
-                    st.info("Nutrition info for this meal is not available.")
-
-            st.markdown("---")
+            render_meal_selection_for_type(meal_type, selected_date, meals, meal_nutrition, meal_allergens,
+                                           status_colors)
 
     # ----------------------------
     # NUTRITION INFO
@@ -512,51 +516,122 @@ def main_app():
     # USER PREFERENCES
     # ----------------------------
     with tab3:
-        st.subheader("⚙️ Dietary Preferences")
+        if st.session_state.get("role") == "patient":
+            st.subheader("⚙️ Dietary Preferences")
 
-        # Ensure defaults are initialized
-        if "diet_preference" not in st.session_state:
-            st.session_state.diet_preference = "None"
-        if "allergies" not in st.session_state:
-            st.session_state.allergies = ["Gluten"]
+            # Ensure defaults are initialized
+            if "diet_preference" not in st.session_state:
+                st.session_state.diet_preference = "None"
+            if "allergies" not in st.session_state:
+                st.session_state.allergies = ["Gluten"]
 
-        # Let widgets directly manage the state
-        st.radio(
-            "Dietary Preference",
-            ["None", "Vegetarian", "Vegan", "Keto", "Low Sodium", "Diabetic", "Halal", "Kosher"],
-            index=["None", "Vegetarian", "Vegan", "Keto", "Low Sodium", "Diabetic", "Halal", "Kosher"].index(
-                st.session_state.diet_preference
-            ),
-            key="diet_preference"
-        )
-
-        st.multiselect(
-            "Known Allergies",
-            ["Gluten", "Dairy", "Nuts", "Shellfish", "Soy", "Eggs"],
-            default=st.session_state.allergies,
-            key="allergies"
-        )
-
-        st.subheader("🕒 Preferred Meal Times")
-
-        # Defaults if not already set
-        if "meal_time_preferences" not in st.session_state:
-            st.session_state.meal_time_preferences = {
-                "Breakfast": "08:00",
-                "Lunch": "12:00",
-                "Dinner": "18:00"
-            }
-
-        for meal_type in ["Breakfast", "Lunch", "Dinner"]:
-            st.time_input(
-                f"{meal_type} Time",
-                value=st.session_state.meal_time_preferences[meal_type],
-                key=f"pref_time_{meal_type}"
+            # Let widgets directly manage the state
+            st.radio(
+                "Dietary Preference",
+                ["None", "Vegetarian", "Vegan", "Keto", "Low Sodium", "Diabetic", "Halal", "Kosher"],
+                index=["None", "Vegetarian", "Vegan", "Keto", "Low Sodium", "Diabetic", "Halal", "Kosher"].index(
+                    st.session_state.diet_preference
+                ),
+                key="diet_preference"
             )
 
-        st.success("Your preferences are saved for this session.")
-        st.markdown(f"**Diet:** {st.session_state.diet_preference}")
-        st.markdown(f"**Allergies:** {', '.join(st.session_state.allergies) if st.session_state.allergies else 'None'}")
+            st.multiselect(
+                "Known Allergies",
+                ["Gluten", "Dairy", "Nuts", "Shellfish", "Soy", "Eggs"],
+                default=st.session_state.allergies,
+                key="allergies"
+            )
+
+            st.subheader("🕒 Preferred Meal Times")
+
+            # Defaults if not already set
+            if "meal_time_preferences" not in st.session_state:
+                st.session_state.meal_time_preferences = {
+                    "Breakfast": "08:00",
+                    "Lunch": "12:00",
+                    "Dinner": "18:00"
+                }
+
+            for meal_type in ["Breakfast", "Lunch", "Dinner"]:
+                st.time_input(
+                    f"{meal_type} Time",
+                    value=st.session_state.meal_time_preferences[meal_type],
+                    key=f"pref_time_{meal_type}"
+                )
+
+            st.success("Your preferences are saved for this session.")
+            st.markdown(f"**Diet:** {st.session_state.diet_preference}")
+            st.markdown(f"**Allergies:** {', '.join(st.session_state.allergies) if st.session_state.allergies else 'None'}")
+
+        if st.session_state.get("role") == "caregiver":
+            st.subheader("🔑 Manage Permissions")
+
+            current_patient = st.session_state.get("current_patient_name", "Unknown")
+            current_permission = "Full Access" if st.session_state.get("can_edit_meals", False) else "View Only"
+
+            st.markdown(f"**Currently Viewing:** `{current_patient}`")
+            st.markdown(f"**Your Permission Level:** `{current_permission}`")
+
+            st.markdown("---")
+            st.subheader("📬 Request Additional Permissions")
+
+            # Define all possible permission options
+            base_permissions = [
+                "View Meal Selection",
+                "View Nutritional Details",
+                "Schedule Meals",
+                "Change Dietary Preferences",
+                "Edit Meal Ratings",
+                "Access Preferences Tab"
+            ]
+
+            # Determine which are already granted based on patient
+            already_granted = []
+            if "Perry" in current_patient:
+                already_granted = base_permissions  # Full access
+            elif "Candace" in current_patient:
+                already_granted = ["View Meal Selection", "View Nutritional Details"]
+
+            # Build display options
+            dropdown_options = []
+            option_map = {}  # maps display string -> raw permission string
+
+            for perm in base_permissions:
+                if perm in already_granted:
+                    label = f"{perm} ✅(already granted)"
+                else:
+                    label = perm
+                dropdown_options.append(label)
+                option_map[label] = perm
+
+            # Add a blank first entry for clarity
+            selected_display = st.selectbox("Select permission to request", [""] + dropdown_options)
+
+            if st.button("Request More Access"):
+                if selected_display and selected_display in option_map:
+                    perm_requested = option_map[selected_display]
+                    if perm_requested in already_granted:
+                        st.info(f"ℹ️ You already have access to '{perm_requested}'.")
+                    else:
+                        st.success(f"✅ Request to add '{perm_requested}' permission has been submitted.")
+                else:
+                    st.error("Please select a permission to request.")
+
+            st.markdown("---")
+            st.subheader("🗑️ Drop This Patient")
+            if st.button("Remove This Patient from My Care List"):
+                st.session_state.caregiver_patients.pop(current_patient, None)
+                st.success("✅ Patient removed from your dashboard.")
+                st.rerun()
+
+            st.markdown("---")
+            st.subheader("➕ Request Access to New Patient")
+            new_patient_name = st.text_input("Enter patient name")
+            if st.button("Request Access"):
+                if new_patient_name.strip():
+                    st.success(f"✅ Request submitted to manage patient: {new_patient_name.strip()}")
+                else:
+                    st.error("Please enter a valid patient name.")
 
 
 # ---------- Run App ----------
@@ -569,9 +644,123 @@ else:
     role = st.session_state.get("role")
     if role == "patient":
         main_app()
-    elif role == "staff":
-        st.subheader("🧑‍⚕️ Hospital Staff Dashboard (Coming Soon)")
-        st.info("This section is under construction.")
+
     elif role == "caregiver":
-        st.subheader("👩‍👦 Caregiver Meal View (Coming Soon)")
-        st.info("This section is under construction.")
+        st.subheader("👩‍👦 Caregiver Dashboard")
+        patient_names = list(st.session_state.caregiver_patients.keys())
+        dropdown_options = [""] + patient_names + ["➕ Add New Patient"]
+
+        selected_patient = st.selectbox(
+            "Select a patient to view",
+            dropdown_options,
+            format_func=lambda x: "Select a patient..." if x == "" else x
+        )
+
+        # Handle Add New Patient
+        if selected_patient == "➕ Add New Patient":
+            st.subheader("📝 Request Access to New Patient")
+
+            new_name = st.text_input("Patient Full Name")
+            new_relationship = st.selectbox("Relationship", ["", "Family", "Friend", "Legal Guardian", "Conservator", "Other (explain below)"])
+            request_message = st.text_area("Justification (Optional)")
+
+            if st.button("Submit Request"):
+                if new_name.strip():
+                    st.success(
+                        f"✅ Request submitted to manage patient: **{new_name.strip()}** as **{new_relationship}**.")
+                    st.info("You’ll be notified when access is granted.")
+                else:
+                    st.error("Patient name is required.")
+
+        # Handle Existing Patient
+        elif selected_patient:
+            # Permissions logic
+            if "Perry" in selected_patient:
+                permissions = {
+                    "can_edit": True,
+                    "description": "Permissions: View Meal Schedule, Schedule Meals, Change Preferences"
+                }
+            else:
+                permissions = {
+                    "can_edit": False,
+                    "description": "Permissions: View Meal Schedule"
+                }
+
+            st.session_state.can_edit_meals = permissions["can_edit"]
+            st.session_state.current_patient_name = selected_patient
+
+            st.info(f"🔒 {permissions['description']}", icon="🔐")
+
+            # Load patient data
+            patient_data = st.session_state.caregiver_patients[selected_patient]
+            st.session_state.meal_schedule = patient_data["meal_schedule"]
+            st.session_state.meal_times = patient_data["meal_times"]
+            st.session_state.meal_time_preferences = patient_data["meal_time_preferences"]
+            st.session_state.diet_preference = patient_data["diet_preference"]
+            st.session_state.allergies = patient_data["allergies"]
+
+            # Render dashboard
+            main_app()
+
+            # Save any updates (only if editable)
+            if st.session_state.can_edit_meals:
+                st.session_state.caregiver_patients[selected_patient] = {
+                    "meal_schedule": st.session_state.meal_schedule,
+                    "meal_times": st.session_state.meal_times,
+                    "meal_time_preferences": st.session_state.meal_time_preferences,
+                    "diet_preference": st.session_state.diet_preference,
+                    "allergies": st.session_state.allergies
+                }
+
+
+
+
+    elif role == "staff":
+        st.subheader("👩‍👦 Hospital Staff Dashboard")
+
+        if "patients" not in st.session_state:
+            st.session_state.patients = {
+                "John Doe": {
+                    "allergies": ["Gluten"],
+                    "diet": "Keto",
+                    "meals": {}
+                },
+                "Jane Smith": {
+                    "allergies": [],
+                    "diet": "Vegetarian",
+                    "meals": {}
+                }
+            }
+
+        # Patient selection
+        patient_names = list(st.session_state.patients.keys())
+        selected_patient = st.selectbox("Select a patient", patient_names)
+
+        if selected_patient:
+            patient_data = st.session_state.patients[selected_patient]
+
+            st.markdown(f"### {selected_patient}")
+            st.write(f"**Dietary Preference:** {patient_data['diet']}")
+            st.write(f"**Allergies:** {', '.join(patient_data['allergies']) if patient_data['allergies'] else 'None'}")
+
+            if st.button("Edit Patient Info"):
+                st.session_state["edit_patient"] = selected_patient
+
+        with st.expander("➕ Add New Patient"):
+            new_name = st.text_input("Full Name")
+            new_diet = st.selectbox("Dietary Preference",
+                                    ["None", "Vegetarian", "Vegan", "Keto", "Low Sodium", "Diabetic", "Halal",
+                                     "Kosher"])
+            new_allergies = st.multiselect("Known Allergies", ["Gluten", "Dairy", "Nuts", "Shellfish", "Soy", "Eggs"])
+            if st.button("Add Patient"):
+                if new_name.strip():
+                    st.session_state.patients[new_name.strip()] = {
+                        "diet": new_diet,
+                        "allergies": new_allergies,
+                        "meals": {}
+                    }
+                    st.success(f"Patient '{new_name}' added.")
+                    st.rerun()
+                else:
+                    st.error("Name cannot be empty.")
+
