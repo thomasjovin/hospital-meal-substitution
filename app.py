@@ -618,7 +618,7 @@ def main_app():
                     st.error("Please select a permission to request.")
 
             st.markdown("---")
-            st.subheader("🗑️ Drop This Patient")
+            st.subheader("🗑️ Remove This Patient")
             if st.button("Remove This Patient from My Care List"):
                 st.session_state.caregiver_patients.pop(current_patient, None)
                 st.success("✅ Patient removed from your dashboard.")
