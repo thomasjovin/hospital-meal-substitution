@@ -638,7 +638,7 @@ def main_app():
 login_section()
 
 if not st.session_state.get("login_complete"):
-    st.subheader("Welcome to the Danville Hospital Meal App")
+    st.subheader("Welcome, order here.")
     st.info("Please log in using the sidebar to continue.")
 else:
     role = st.session_state.get("role")
