@@ -573,23 +573,72 @@ def staff_dashboard():
             if search and search.lower() not in name.lower():
                 continue
 
-            with st.expander(f"🧍 {name} - Room {info['room']}"):
-                st.markdown(f"**Dietary Preference:** {info['diet_preference']}")
-                st.markdown(f"**Allergies:** {', '.join(info['allergies']) if info['allergies'] else 'None'}")
-                st.markdown(f"**Restrictions:** {', '.join(info['restrictions']) if info['restrictions'] else 'None'}")
-                st.markdown(f"**Assigned Caregiver:** {info['caregiver'] if info['caregiver'] else 'None'}")
+            # Inline warning confirmation if flagged
+            if st.session_state.get("confirm_delete_patient") == name:
+                st.warning(f"⚠️ You are about to permanently delete **{name}**. This action cannot be undone.")
+                col_confirm, col_cancel = st.columns(2)
+                with col_confirm:
+                    if st.button("Yes, Delete Patient", key=f"confirm_{name}"):
+                        del st.session_state.staff_patients[name]
+                        st.session_state.pop("confirm_delete_patient", None)
+                        st.success(f"✅ Patient {name} has been removed.")
+                        st.rerun()
+                with col_cancel:
+                    if st.button("Cancel Deletion", key=f"cancel_{name}"):
+                        st.session_state.pop("confirm_delete_patient", None)
+                st.markdown("---")
+                continue
 
-                if st.button(f"View Schedule for {name}"):
-                    st.markdown(f"### 🗓️ Schedule for {name} — Room {info['room']}")
+            col1, col2 = st.columns([9, 1])
+            with col1:
+                with st.expander(f"🧍 {name} - Room {info['room']}"):
+                    st.markdown(f"**Dietary Preference:** {info['diet_preference']}")
+                    st.markdown(f"**Allergies:** {', '.join(info['allergies']) if info['allergies'] else 'None'}")
+                    st.markdown(
+                        f"**Restrictions:** {', '.join(info['restrictions']) if info['restrictions'] else 'None'}")
+                    st.markdown(f"**Assigned Caregiver:** {info['caregiver'] if info['caregiver'] else 'None'}")
 
-                    time_blocks = info.get("time_blocks", [])
-                    if not time_blocks:
-                        st.info("No restricted time windows have been added.")
-                    else:
-                        for block in time_blocks:
-                            st.markdown(
-                                f"- **{block['start']} – {block['end']}** &nbsp;&nbsp; | &nbsp;&nbsp; _{block['reason']}_"
-                            )
+                    col_schedule, col_order = st.columns(2)
+                    with col_schedule:
+                        if st.button(f"View Schedule for {name}", key=f"view_schedule_{name}"):
+                            st.markdown(f"### 🗓️ Schedule for {name} — Room {info['room']}")
+
+                            time_blocks = info.get("time_blocks", [])
+                            if not time_blocks:
+                                st.info("No restricted time windows have been added.")
+                            else:
+                                for block in time_blocks:
+                                    st.markdown(
+                                        f"- **{block['start']} – {block['end']}** &nbsp;&nbsp; | &nbsp;&nbsp; _{block['reason']}_"
+                                    )
+
+                    with col_order:
+                        if st.button(f"Order Meal for {name}", key=f"prompt_order_{name}"):
+                            st.session_state[f"show_order_{name}"] = not st.session_state.get(f"show_order_{name}",
+                                                                                              False)
+
+                    if st.session_state.get(f"show_order_{name}", False):
+                        st.markdown("---")
+                        st.markdown(f"### 🍽️  Order a Meal for {name}")
+                        order_date = st.date_input("Select date", datetime.date.today(), key=f"order_date_{name}")
+                        meal_type_order = st.selectbox("Meal Type", ["Breakfast", "Lunch", "Dinner"],
+                                                       key=f"order_type_{name}")
+                        meal_choice = st.selectbox("Meal", meals[meal_type_order], key=f"order_meal_{name}")
+
+                        if st.button("Order Meal", key=f"order_btn_{name}"):
+                            if "staff_orders" not in st.session_state:
+                                st.session_state.staff_orders = {}
+                            key = (name, order_date.isoformat())
+                            if key not in st.session_state.staff_orders:
+                                st.session_state.staff_orders[key] = {}
+                            st.session_state.staff_orders[key][meal_type_order] = meal_choice
+                            st.success(
+                                f"✅ Ordered {meal_choice} for {name} on {order_date.strftime('%b %d')} ({meal_type_order})")
+
+            with col2:
+                with st.container():
+                    if st.button("🗑️", key=f"delete_icon_{name}"):
+                        st.session_state["confirm_delete_patient"] = name
 
     # --------------------------
     # Tab 2: Admit New Patient
