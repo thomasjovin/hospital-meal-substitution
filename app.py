@@ -585,7 +585,14 @@ def staff_dashboard():
 
                     col_schedule, col_order = st.columns(2)
                     with col_schedule:
+                        schedule_key = f"show_schedule_{name}"
+                        if schedule_key not in st.session_state:
+                            st.session_state[schedule_key] = False
+
                         if st.button(f"View Schedule for {name}", key=f"view_schedule_{name}"):
+                            st.session_state[schedule_key] = not st.session_state[schedule_key]
+
+                        if st.session_state[schedule_key]:
                             st.markdown(f"### 🗓️ Schedule for {name} — Room {info['room']}")
 
                             time_blocks = info.get("time_blocks", [])
