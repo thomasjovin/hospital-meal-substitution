@@ -573,21 +573,6 @@ def staff_dashboard():
             if search and search.lower() not in name.lower():
                 continue
 
-            # Inline warning confirmation if flagged
-            if st.session_state.get("confirm_delete_patient") == name:
-                st.warning(f"⚠️ You are about to permanently delete **{name}**. This action cannot be undone.")
-                col_confirm, col_cancel = st.columns(2)
-                with col_confirm:
-                    if st.button("Yes, Delete Patient", key=f"confirm_{name}"):
-                        del st.session_state.staff_patients[name]
-                        st.session_state.pop("confirm_delete_patient", None)
-                        st.success(f"✅ Patient {name} has been removed.")
-                        st.rerun()
-                with col_cancel:
-                    if st.button("Cancel Deletion", key=f"cancel_{name}"):
-                        st.session_state.pop("confirm_delete_patient", None)
-                st.markdown("---")
-                continue
 
             col1, col2 = st.columns([9, 1])
             with col1:
@@ -639,6 +624,23 @@ def staff_dashboard():
                 with st.container():
                     if st.button("🗑️", key=f"delete_icon_{name}"):
                         st.session_state["confirm_delete_patient"] = name
+
+            # Inline warning confirmation if flagged
+            if st.session_state.get("confirm_delete_patient") == name:
+                st.warning(f"⚠️ You are about to permanently delete **{name}**. This action cannot be undone.")
+                col_confirm, col_cancel = st.columns(2)
+                with col_confirm:
+                    if st.button("Yes, Delete Patient", key=f"confirm_{name}"):
+                        del st.session_state.staff_patients[name]
+                        st.session_state.pop("confirm_delete_patient", None)
+                        st.success(f"✅ Patient {name} has been removed.")
+                        st.rerun()
+                with col_cancel:
+                    if st.button("Cancel Deletion", key=f"cancel_{name}"):
+                        st.session_state.pop("confirm_delete_patient", None)
+                        st.rerun()
+                st.markdown("---")
+                continue
 
     # --------------------------
     # Tab 2: Admit New Patient
