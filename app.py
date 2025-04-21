@@ -547,7 +547,7 @@ def staff_dashboard():
                 "diet_preference": "None",
                 "allergies": ["Gluten"],
                 "restrictions": ["No pork"],
-                "caregiver": "Mr. Perry (Family)",
+                "caregiver": "Phineas (Family)",
                 "time_blocks": [{"start": "12:00", "end": "14:00", "reason": "Fasting required"}]
         },
             "Ms. Candace": {
@@ -555,7 +555,7 @@ def staff_dashboard():
                 "diet_preference": "Vegetarian",
                 "allergies": [],
                 "restrictions": ["Fasting until noon"],
-                "caregiver": "Ms. Candace (Friend)",
+                "caregiver": "Baljeet (Friend)",
                 "time_blocks": [{"start": "14:00", "end": "18:00", "reason": "Operation"}]
             }
         }
