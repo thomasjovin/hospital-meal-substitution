@@ -573,7 +573,6 @@ def staff_dashboard():
             if search and search.lower() not in name.lower():
                 continue
 
-
             col1, col2 = st.columns([9, 1])
             with col1:
                 with st.expander(f"🧍 {name} - Room {info['room']}"):
@@ -599,7 +598,7 @@ def staff_dashboard():
                             if not time_blocks:
                                 st.info("No restricted time windows have been added.")
                             else:
-                                for block in time_blocks:
+                                for block in sorted(time_blocks, key=lambda b: datetime.datetime.strptime(b['start'], '%H:%M')):
                                     st.markdown(
                                         f"- **{block['start']} – {block['end']}** &nbsp;&nbsp; | &nbsp;&nbsp; _{block['reason']}_"
                                     )
@@ -617,7 +616,36 @@ def staff_dashboard():
                                                        key=f"order_type_{name}")
                         meal_choice = st.selectbox("Meal", meals[meal_type_order], key=f"order_meal_{name}")
 
-                        if st.button("Order Meal", key=f"order_btn_{name}"):
+                        order_time = st.time_input("Select time", value=datetime.time(12, 0), key=f"order_time_{name}")
+
+                        # Check against restricted time blocks
+                        restriction_blocks = info.get("time_blocks", [])
+                        selected_minutes = order_time.hour * 60 + order_time.minute
+                        time_conflict = False
+
+                        for block in restriction_blocks:
+                            start = datetime.datetime.strptime(block["start"], "%H:%M")
+                            end = datetime.datetime.strptime(block["end"], "%H:%M")
+                            start_min = start.hour * 60 + start.minute
+                            end_min = end.hour * 60 + end.minute
+                            if start_min <= selected_minutes < end_min:
+                                time_conflict = True
+                                conflict_reason = block["reason"]
+                                break
+
+                        # Check for allergens
+                        selected_allergens = meal_allergens.get(meal_choice, [])
+                        allergies = info.get("allergies", [])
+                        matching_allergies = [a for a in selected_allergens if a in allergies]
+
+                        if time_conflict:
+                            st.error(f"⛔ Cannot schedule during restricted time block: {block['start']} – {block['end']} ({conflict_reason})")
+
+                        elif matching_allergies:
+                            st.error(
+                                f"🚫 Cannot order '{meal_choice}' due to {name}'s allergies: {', '.join(matching_allergies)}")
+
+                        elif st.button("Order Meal", key=f"order_btn_{name}"):
                             if "staff_orders" not in st.session_state:
                                 st.session_state.staff_orders = {}
                             key = (name, order_date.isoformat())
@@ -702,7 +730,8 @@ def staff_dashboard():
 
             # Show existing time blocks
             if patient_info["time_blocks"]:
-                for i, block in enumerate(patient_info["time_blocks"]):
+                for i, block in enumerate(sorted(patient_info["time_blocks"],
+                                                 key=lambda b: datetime.datetime.strptime(b["start"], "%H:%M"))):
                     st.markdown(f"- `{block['start']} – {block['end']}` | **{block['reason']}**")
             else:
                 st.info("No time-based restrictions.")
