@@ -155,6 +155,7 @@ status_colors = {
 }
 meal_allergens = {
 "Pancakes with Banana": ["Gluten", "Eggs"],
+"Eggs Benedict, Orange": ["Eggs"],
 "Spaghetti and Meatballs": ["Gluten"],
 "Scrambled Eggs and Toast": ["Gluten", "Eggs"],
 "Tuna Salad, Brussel Sprouts": ["Eggs"],

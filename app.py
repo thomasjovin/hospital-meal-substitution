@@ -547,7 +547,7 @@ def staff_dashboard():
                 "diet_preference": "None",
                 "allergies": ["Gluten"],
                 "restrictions": ["No pork"],
-                "caregiver": "Mr. Perry (Family)",
+                "caregiver": "Phineas (Family)",
                 "time_blocks": [{"start": "12:00", "end": "14:00", "reason": "Fasting required"}]
         },
             "Ms. Candace": {
@@ -555,7 +555,7 @@ def staff_dashboard():
                 "diet_preference": "Vegetarian",
                 "allergies": [],
                 "restrictions": ["Fasting until noon"],
-                "caregiver": "Ms. Candace (Friend)",
+                "caregiver": "Baljeet (Friend)",
                 "time_blocks": [{"start": "14:00", "end": "18:00", "reason": "Operation"}]
             }
         }
@@ -573,23 +573,109 @@ def staff_dashboard():
             if search and search.lower() not in name.lower():
                 continue
 
-            with st.expander(f"🧍 {name} - Room {info['room']}"):
-                st.markdown(f"**Dietary Preference:** {info['diet_preference']}")
-                st.markdown(f"**Allergies:** {', '.join(info['allergies']) if info['allergies'] else 'None'}")
-                st.markdown(f"**Restrictions:** {', '.join(info['restrictions']) if info['restrictions'] else 'None'}")
-                st.markdown(f"**Assigned Caregiver:** {info['caregiver'] if info['caregiver'] else 'None'}")
+            col1, col2 = st.columns([9, 1])
+            with col1:
+                with st.expander(f"🧍 {name} - Room {info['room']}"):
+                    st.markdown(f"**Dietary Preference:** {info['diet_preference']}")
+                    st.markdown(f"**Allergies:** {', '.join(info['allergies']) if info['allergies'] else 'None'}")
+                    st.markdown(
+                        f"**Restrictions:** {', '.join(info['restrictions']) if info['restrictions'] else 'None'}")
+                    st.markdown(f"**Assigned Caregiver:** {info['caregiver'] if info['caregiver'] else 'None'}")
 
-                if st.button(f"View Schedule for {name}"):
-                    st.markdown(f"### 🗓️ Schedule for {name} — Room {info['room']}")
+                    col_schedule, col_order = st.columns(2)
+                    with col_schedule:
+                        schedule_key = f"show_schedule_{name}"
+                        if schedule_key not in st.session_state:
+                            st.session_state[schedule_key] = False
 
-                    time_blocks = info.get("time_blocks", [])
-                    if not time_blocks:
-                        st.info("No restricted time windows have been added.")
-                    else:
-                        for block in time_blocks:
-                            st.markdown(
-                                f"- **{block['start']} – {block['end']}** &nbsp;&nbsp; | &nbsp;&nbsp; _{block['reason']}_"
-                            )
+                        if st.button(f"View Schedule for {name}", key=f"view_schedule_{name}"):
+                            st.session_state[schedule_key] = not st.session_state[schedule_key]
+
+                        if st.session_state[schedule_key]:
+                            st.markdown(f"### 🗓️ Schedule for {name} — Room {info['room']}")
+
+                            time_blocks = info.get("time_blocks", [])
+                            if not time_blocks:
+                                st.info("No restricted time windows have been added.")
+                            else:
+                                for block in sorted(time_blocks, key=lambda b: datetime.datetime.strptime(b['start'], '%H:%M')):
+                                    st.markdown(
+                                        f"- **{block['start']} – {block['end']}** &nbsp;&nbsp; | &nbsp;&nbsp; _{block['reason']}_"
+                                    )
+
+                    with col_order:
+                        if st.button(f"Order Meal for {name}", key=f"prompt_order_{name}"):
+                            st.session_state[f"show_order_{name}"] = not st.session_state.get(f"show_order_{name}",
+                                                                                              False)
+
+                    if st.session_state.get(f"show_order_{name}", False):
+                        st.markdown("---")
+                        st.markdown(f"### 🍽️  Order a Meal for {name}")
+                        order_date = st.date_input("Select date", datetime.date.today(), key=f"order_date_{name}")
+                        meal_type_order = st.selectbox("Meal Type", ["Breakfast", "Lunch", "Dinner"],
+                                                       key=f"order_type_{name}")
+                        meal_choice = st.selectbox("Meal", meals[meal_type_order], key=f"order_meal_{name}")
+
+                        order_time = st.time_input("Select time", value=datetime.time(12, 0), key=f"order_time_{name}")
+
+                        # Check against restricted time blocks
+                        restriction_blocks = info.get("time_blocks", [])
+                        selected_minutes = order_time.hour * 60 + order_time.minute
+                        time_conflict = False
+
+                        for block in restriction_blocks:
+                            start = datetime.datetime.strptime(block["start"], "%H:%M")
+                            end = datetime.datetime.strptime(block["end"], "%H:%M")
+                            start_min = start.hour * 60 + start.minute
+                            end_min = end.hour * 60 + end.minute
+                            if start_min <= selected_minutes < end_min:
+                                time_conflict = True
+                                conflict_reason = block["reason"]
+                                break
+
+                        # Check for allergens
+                        selected_allergens = meal_allergens.get(meal_choice, [])
+                        allergies = info.get("allergies", [])
+                        matching_allergies = [a for a in selected_allergens if a in allergies]
+
+                        if time_conflict:
+                            st.error(f"⛔ Cannot schedule during restricted time block: {block['start']} – {block['end']} ({conflict_reason})")
+
+                        elif matching_allergies:
+                            st.error(
+                                f"🚫 Cannot order '{meal_choice}' due to {name}'s allergies: {', '.join(matching_allergies)}")
+
+                        elif st.button("Order Meal", key=f"order_btn_{name}"):
+                            if "staff_orders" not in st.session_state:
+                                st.session_state.staff_orders = {}
+                            key = (name, order_date.isoformat())
+                            if key not in st.session_state.staff_orders:
+                                st.session_state.staff_orders[key] = {}
+                            st.session_state.staff_orders[key][meal_type_order] = meal_choice
+                            st.success(
+                                f"✅ Ordered {meal_choice} for {name} on {order_date.strftime('%b %d')} ({meal_type_order})")
+
+            with col2:
+                with st.container():
+                    if st.button("🗑️", key=f"delete_icon_{name}"):
+                        st.session_state["confirm_delete_patient"] = name
+
+            # Inline warning confirmation if flagged
+            if st.session_state.get("confirm_delete_patient") == name:
+                st.warning(f"⚠️ You are about to permanently delete **{name}**. This action cannot be undone.")
+                col_confirm, col_cancel = st.columns(2)
+                with col_confirm:
+                    if st.button("Yes, Delete Patient", key=f"confirm_{name}"):
+                        del st.session_state.staff_patients[name]
+                        st.session_state.pop("confirm_delete_patient", None)
+                        st.success(f"✅ Patient {name} has been removed.")
+                        st.rerun()
+                with col_cancel:
+                    if st.button("Cancel Deletion", key=f"cancel_{name}"):
+                        st.session_state.pop("confirm_delete_patient", None)
+                        st.rerun()
+                st.markdown("---")
+                continue
 
     # --------------------------
     # Tab 2: Admit New Patient
@@ -644,7 +730,8 @@ def staff_dashboard():
 
             # Show existing time blocks
             if patient_info["time_blocks"]:
-                for i, block in enumerate(patient_info["time_blocks"]):
+                for i, block in enumerate(sorted(patient_info["time_blocks"],
+                                                 key=lambda b: datetime.datetime.strptime(b["start"], "%H:%M"))):
                     st.markdown(f"- `{block['start']} – {block['end']}` | **{block['reason']}**")
             else:
                 st.info("No time-based restrictions.")
